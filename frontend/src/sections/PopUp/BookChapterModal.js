@@ -1,25 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  Dialog,
-  Typography,
-  Slide,
-  Container, 
-  Grid, 
-  TextField, 
-  FormGroup, 
-  FormControlLabel, 
-  Switch, 
-  Box, 
-  IconButton, 
-  Stack, 
-  Button,
-  Tab,
-  Tabs
-} from '@mui/material';
+import Dialog from '@mui/material/Dialog';
+import Typography from '@mui/material/Typography';
+import Slide from '@mui/material/Slide';
 import { useFormik, Form, FormikProvider } from 'formik';
 import * as Yup from 'yup';
+import { Container, Grid, TextField, FormGroup, FormControlLabel, Switch } from '@mui/material';
 import PropTypes from 'prop-types';
-import LoadingButton from '@mui/lab/LoadingButton';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Box from '@mui/material/Box';
+import { LoadingButton } from '@mui/lab';
 import MyEditor from 'src/components/common/Editor';
 import authorChapterServices from 'src/Services/WebApiHandler/authorChapterServices';
 import { toast } from 'react-toastify';
@@ -30,6 +20,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import DownloadForOfflineIcon from '@mui/icons-material/DownloadForOffline';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
 import { aiService } from 'src/Services/ApiHandlers/aiService';
+import { Stack, Button, IconButton } from '@mui/material';
 
 const Transition = React.forwardRef(function Transition(props, ref) {
   return <Slide direction="up" ref={ref} {...props} />;
@@ -68,10 +59,11 @@ function a11yProps(index) {
   };
 }
 
-const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) => {
+export default function BookChapterUpdateModal({ open, setOpen, bookId, bookdata, getChapterHeader }) {
   const [value, setValue] = useState(0);
   const [stateData, setStateData] = useState({ data: '' });
   const [expressData, setExpressData] = useState({ data: '' });
+  const [showEditor, setShowEditor] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [existingFiles, setExistingFiles] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -85,149 +77,72 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
   };
 
   const userSchema = Yup.object().shape({
-    chapter_name: Yup.string().required('Chapter name is required'),
+    chapter_name: Yup.string().required('Chapter Name is required'),
     regular_authors: Yup.string(),
     express_authors: Yup.string(),
   });
 
-  const onSubmit = async (values) => {
-    let postData = {
-      book_slug: bookdata?.book_slug || bookdata.slug,
-      book_id: bookdata?.book_id || bookdata?._id,
-      chapter_name: values.chapter_name,
-      chapter_content: stateData.data,
-      chapter_express_content: expressData.data,
-      regular_authors: values.regular_authors,
-      express_authors: values.express_authors,
-      public_visibility: values.public_visibility,
-      allow_part_see: values.allow_part_see,
-    };
-
-    console.log('Creating chapter with data:', postData);
-
-    if (stateData?.data || expressData?.data) {
-      try {
-        const response = await authorChapterServices.createChapterApi(postData);
-        console.log('Chapter creation response:', response);
-        
-        if (response.code === 201) {
-          // Upload context files if any are selected
-          if (selectedFiles.length > 0) {
-            try {
-              const formData = new FormData();
-              
-              // Log each file being added to FormData
-              selectedFiles.forEach((file, index) => {
-                console.log(`Processing file ${index}:`, {
-                  name: file.name,
-                  type: file.type,
-                  size: file.size
-                });
-                
-                formData.append(`files`, file);
-              });
-
-              // Get the correct slugs from the response
-              const uploadParams = {
-                bookSlug: response.data.book_slug || bookdata.book_slug || bookdata.slug,
-                chapterSlug: response.data.slug, // Use the slug from the response
-                data: formData
-              };
-              
-              console.log('Upload parameters:', {
-                bookSlug: uploadParams.bookSlug,
-                chapterSlug: uploadParams.chapterSlug,
-                fileCount: selectedFiles.length,
-                responseData: response.data
-              });
-
-              const uploadResponse = await authorChapterServices.uploadAiContextFile(uploadParams);
-              console.log('File upload response:', uploadResponse);
-
-              if (!uploadResponse) {
-                throw new Error('No response received from file upload');
-              }
-
-              if (uploadResponse.error) {
-                throw new Error(uploadResponse.error);
-              }
-
-              if (uploadResponse.code >= 400) {
-                throw new Error(uploadResponse.message || 'Server error during file upload');
-              }
-
-              toast.success(`Successfully uploaded ${selectedFiles.length} file(s)`);
-              
-              // Refresh the list of existing files
-              await fetchExistingFiles();
-            } catch (uploadError) {
-              console.error('File upload error details:', {
-                error: uploadError,
-                message: uploadError.message,
-                response: uploadError.response?.data,
-                status: uploadError.response?.status
-              });
-              
-              let errorMessage = 'Failed to upload context files';
-              if (uploadError.response?.data?.message) {
-                errorMessage = uploadError.response.data.message;
-              } else if (uploadError.message) {
-                errorMessage = uploadError.message;
-              }
-              
-              toast.error(`Error uploading files: ${errorMessage}`);
-            }
-          }
-
-          dispatch(renderAction(true));
-          toast.success(response.message);
-          setOpen(false);
-          getChapterHeader();
-          resetForm();
-        } else {
-          dispatch(renderAction(false));
-          toast.error(response.message || 'Failed to create chapter');
-        }
-      } catch (error) {
-        console.error('Error saving chapter:', error);
-        toast.error(error.message || 'An error occurred while saving');
-      }
+  useEffect(() => {
+    if (open === true) {
+      setStateData({
+        data: bookdata?.regular_content || bookdata?.chapter_content,
+      });
+      setExpressData({
+        data: bookdata?.express_content || bookdata?.chapter_express_content,
+      });
+      setFieldValue(`chapter_name`, bookdata?.chapter_name);
+      setFieldValue(`regular_authors`, bookdata?.regular_authors || '');
+      setFieldValue(`express_authors`, bookdata?.express_authors || '');
+      setFieldValue(`public_visibility`, bookdata?.public_visibility);
+      setFieldValue(`allow_part_see`, bookdata?.allow_part_see ?? false);
+      setShowEditor(true);
+      fetchExistingFiles();
     }
-  };
-
-  const formik = useFormik({
-    initialValues: userValues,
-    validationSchema: userSchema,
-    onSubmit,
-  });
+  }, [open]);
 
   const fetchExistingFiles = useCallback(async () => {
+    if (!bookdata?.book_slug && !bookdata?.slug) return;
+    
     setIsLoading(true);
     try {
-      const response = await aiService.getContextFiles({
-        bookSlug: bookdata?.book_slug || bookdata.slug,
-        chapterSlug: bookdata.slug
-      });
+      const bookSlug = bookdata?.book_slug || bookdata.slug;
+      const chapterSlug = bookdata.slug;
+      
+      console.log('Fetching existing files for:', { bookSlug, chapterSlug });
+      
+      const response = await aiService.getContextFiles({ bookSlug, chapterSlug });
+      console.log('Existing files response:', response);
+      
       if (response.code === 200) {
         setExistingFiles(response.data || []);
+      } else {
+        console.warn('Non-200 response when fetching files:', response);
+        setExistingFiles([]);
       }
     } catch (error) {
       console.error('Error fetching context files:', error);
       toast.error('Failed to fetch existing files');
+      setExistingFiles([]);
     } finally {
       setIsLoading(false);
     }
-  }, [bookdata?.book_slug, bookdata.slug]);
-
-  useEffect(() => {
-    if (open && bookdata?._id) {
-      fetchExistingFiles();
-    }
-  }, [open, bookdata?._id, fetchExistingFiles]);
+  }, [bookdata]);
 
   const handleFileChange = (event) => {
     const files = Array.from(event.target.files);
-    setSelectedFiles(prev => [...prev, ...files]);
+    
+    // Filter files to only allow .txt, .md, and .tex
+    const allowedExtensions = ['.txt', '.md', '.tex', '.pdf'];
+    const filteredFiles = files.filter(file => {
+      const extension = file.name.substring(file.name.lastIndexOf('.')).toLowerCase();
+      const isAllowed = allowedExtensions.includes(extension);
+      if (!isAllowed) {
+        toast.warning(`File "${file.name}" has an unsupported extension. Only .txt, .md, .tex, and .pdf files are allowed.`);
+      }
+      return isAllowed;
+    });
+    
+    setSelectedFiles(prev => [...prev, ...filteredFiles]);
   };
 
   const removeFile = (index) => {
@@ -236,23 +151,93 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
 
   const handleDeleteFile = async (fileId) => {
     try {
+      const bookSlug = bookdata?.book_slug || bookdata.slug;
+      const chapterSlug = bookdata.slug;
+      
       const response = await authorChapterServices.deleteAiContextFile({
-        bookSlug: bookdata.book_slug,
-        chapterSlug: bookdata.slug,
-        filePath: fileId
+        bookSlug,
+        chapterSlug,
+        fileId
       });
       
       if (response.code === 200) {
         setExistingFiles(prev => prev.filter(file => file._id !== fileId));
         toast.success('File deleted successfully');
       } else {
-        toast.error('Failed to delete file');
+        toast.error(response.message || 'Failed to delete file');
       }
     } catch (error) {
       console.error('Error deleting file:', error);
       toast.error('Failed to delete file');
     }
   };
+
+  const formik = useFormik({
+    initialValues: userValues,
+    validationSchema: userSchema,
+
+    onSubmit: async (values) => {
+      let postData = {
+        book_id: bookId,
+        chapter_name: values.chapter_name,
+        chapter_content: stateData.data,
+        chapter_express_content: expressData.data,
+        regular_authors: values.regular_authors,
+        express_authors: values.express_authors,
+        public_visibility: values.public_visibility,
+        allow_part_see: values.allow_part_see,
+      };
+
+      if (stateData?.data || expressData?.data) {
+        try {
+          const response = await authorChapterServices.updateChapterApi(bookdata?._id, postData);
+          
+          if (response.code === 200) {
+            // Upload any new context files if they exist
+            if (selectedFiles.length > 0) {
+              try {
+                const formData = new FormData();
+                selectedFiles.forEach(file => {
+                  formData.append('files', file);
+                });
+                
+                const bookSlug = bookdata?.book_slug || bookdata.slug;
+                const chapterSlug = bookdata.slug;
+                
+                const uploadResponse = await authorChapterServices.uploadAiContextFile({
+                  bookSlug,
+                  chapterSlug,
+                  data: formData
+                });
+                
+                if (uploadResponse.code === 200) {
+                  toast.success(`Successfully uploaded ${selectedFiles.length} file(s)`);
+                  setSelectedFiles([]);
+                } else {
+                  toast.error(uploadResponse.message || 'Failed to upload files');
+                }
+              } catch (error) {
+                console.error('Error uploading files:', error);
+                toast.error(`Error uploading files: ${error.message}`);
+              }
+            }
+            
+            dispatch(renderAction(true));
+            setOpen(false);
+            getChapterHeader();
+            toast.success(response.message);
+            resetForm();
+          } else {
+            dispatch(renderAction(false));
+            toast.error(response.message || 'Update failed');
+          }
+        } catch (error) {
+          console.log(error);
+          toast.error('An error occurred while updating');
+        }
+      }
+    },
+  });
 
   const resetForm = () => {
     setFieldValue('chapter_name', '');
@@ -281,7 +266,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
     });
   };
 
-  const { values, errors, touched, handleSubmit: submitForm, getFieldProps, setFieldValue } = formik;
+  const { values, errors, touched, handleSubmit, getFieldProps, setFieldValue } = formik;
   const handleClose = () => {
     setOpen(false);
     setFieldValue(`chapter_name`, '');
@@ -291,18 +276,28 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
     setFieldValue('express_authors', '');
     setStateData({ data: '' });
     setExpressData({ data: '' });
+    setSelectedFiles([]);
+    setShowEditor(false);
   };
 
   return (
-    <Dialog fullWidth maxWidth={'lg'} open={open} onClose={handleClose} TransitionComponent={Transition}>
+    <Dialog
+      disableEnforceFocus
+      fullWidth
+      maxWidth={'lg'}
+      open={open}
+      onClose={handleClose}
+      TransitionComponent={Transition}
+    >
       <section className="mt-5">
         <Container>
           <FormikProvider value={formik}>
-            <Form autoComplete="off" noValidate onSubmit={submitForm}>
+            <Form autoComplete="off" noValidate onSubmit={handleSubmit}>
               <div className="row justify-content-between">
                 <div className="col-md-9">
                   <TextField
                     fullWidth
+                    autoComplete="username"
                     type="text"
                     label="Chapter Name"
                     value={values.chapter_name}
@@ -321,7 +316,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                     {!values.public_visibility && (
                       <FormControlLabel
                         control={<Switch checked={values.allow_part_see} {...getFieldProps('allow_part_see')} />}
-                        label="Preview Mode"
+                        label="Partial Visibility"
                       />
                     )}
                   </FormGroup>
@@ -335,8 +330,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                 </Box>
 
                 <TabPanel value={value} index={0}>
-                  <MyEditor onEditorChange={onEditorChangeR} content={stateData.data} />
-
+                  {showEditor && <MyEditor onEditorChange={onEditorChangeR} content={stateData.data} />}
                   {!stateData?.data && !expressData?.data && (
                     <Typography sx={{ color: 'red', fontSize: '0.75rem' }}>content is required</Typography>
                   )}
@@ -353,7 +347,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                 </TabPanel>
 
                 <TabPanel value={value} index={1}>
-                  <MyEditor onEditorChange={onEditorChangeE} content={expressData.data} />
+                  {showEditor && <MyEditor onEditorChange={onEditorChangeE} content={expressData.data} />}
                   <TextField
                     fullWidth
                     type="text"
@@ -372,6 +366,10 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                   <Box sx={{ mb: 3 }}>
                     <Typography variant="subtitle1" gutterBottom>
                       AI Context Files
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      Upload files (.txt, .md, .tex, .pdf) to provide additional context for AI to answer questions about this chapter.
+                      These files won't be visible to users but will be used to enhance AI responses.
                     </Typography>
                     <Stack direction="row" spacing={2} alignItems="center">
                       <input
@@ -409,7 +407,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                           sx={{ mb: 1 }}
                         >
                           <Typography variant="body2">
-                            {file.name}
+                            {file.name} ({(file.size / 1024).toFixed(2)} KB)
                           </Typography>
                           <IconButton 
                             size="small" 
@@ -423,7 +421,6 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                     </Box>
                   )}
 
-                  {/* Existing Files Section */}
                   {existingFiles.length > 0 && (
                     <Box sx={{ mb: 3 }}>
                       <Typography variant="subtitle2" gutterBottom>
@@ -448,7 +445,7 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
                               '&:hover': { color: '#007bb2' }
                             }}
                           >
-                            {file.name}
+                            {file.name} {file.size && `(${(file.size / 1024).toFixed(2)} KB)`}
                             <DownloadForOfflineIcon sx={{ ml: 1, fontSize: 20 }} />
                           </Typography>
                           <IconButton 
@@ -489,14 +486,12 @@ const BookChapterModal = ({ open, setOpen, bookdata, getChapterHeader, type }) =
       </section>
     </Dialog>
   );
-};
+}
 
-BookChapterModal.propTypes = {
+BookChapterUpdateModal.propTypes = {
   open: PropTypes.bool.isRequired,
   setOpen: PropTypes.func.isRequired,
+  bookId: PropTypes.string,
   bookdata: PropTypes.object.isRequired,
   getChapterHeader: PropTypes.func.isRequired,
-  type: PropTypes.string
 };
-
-export default BookChapterModal;

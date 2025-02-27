@@ -16,6 +16,7 @@ const chapterSchema = new Schema({
   express_authors: { type: String },
   created_at: { type: Schema.Types.Date, default: new Date().getTime() },
   update_at: { type: Schema.Types.Date },
+  contextFiles: [{ type: String }],
 });
 
 const Chapter = model('chapter', chapterSchema);

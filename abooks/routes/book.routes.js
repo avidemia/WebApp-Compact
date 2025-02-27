@@ -11,7 +11,7 @@ import {
   checkIfAuthor,
   checkIfAuthorOrInstructor,
 } from '../helpers/middleware/custom.js';
-import { uploadFiles } from '../helpers/third-party/multipart.js';
+import { uploadFiles, uploadAiContext } from '../helpers/third-party/multipart.js';
 import VALIDATE from '../helpers/validations/index.js';
 
 const router = express.Router();
@@ -82,6 +82,21 @@ router
   );
 
 /* ----------------------- Upload Zip and Sync Images ------------------------ */
+router.post(
+  '/upload-context-files/:bookSlug/:chapterSlug',
+  uploadAiContext('contextFiles'),
+  verifyJwt,
+  checkIfAuthorOrInstructor,
+  BookContent.uploadContextFiles
+);
+
+router.patch(
+  '/chapter/:chapterId/context-files',
+  verifyJwt,
+  checkIfAuthorOrInstructor,
+  BookContent.associateContextFiles
+);
+
 router.post(
   '/zip-file',
   uploadFiles('uploads/temp').single('zip_file'),

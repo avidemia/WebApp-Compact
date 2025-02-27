@@ -83,82 +83,35 @@ const uploadCK = multer({ storage: storageCK });
 function uploadAiContext(fieldName) {
   const baseDir = 'uploads/ai-context';
   
-  console.log('Initializing uploadAiContext middleware:', {
-    fieldName,
-    baseDir,
-    cwd: process.cwd()
-  });
-  
   const aiContextStorage = multer.diskStorage({
     destination: (req, file, cb) => {
-      // Get book and chapter slugs from request
       const { bookSlug, chapterSlug } = req.params;
       
-      console.log('File Upload Request:', {
-        params: req.params,
-        bookSlug,
-        chapterSlug,
-        fieldName,
-        file: {
-          fieldname: file.fieldname,
-          originalname: file.originalname,
-          encoding: file.encoding,
-          mimetype: file.mimetype,
-          size: file.size
-        }
-      });
-      
-      if (!bookSlug || !chapterSlug) {
-        console.error('Missing slugs:', { bookSlug, chapterSlug });
-        return cb(new Error('Missing bookSlug or chapterSlug in request params'));
+      // Validate slugs format
+      if (!/^[a-z0-9-]+$/.test(bookSlug) || !/^[a-z0-9-]+$/.test(chapterSlug)) {
+        return cb(new Error('Invalid slug format. Only lowercase letters, numbers and hyphens allowed'));
       }
 
-      // Create nested directory structure
       const uploadDir = path.join(baseDir, bookSlug, chapterSlug);
       const absoluteUploadDir = path.join(process.cwd(), uploadDir);
-      
-      console.log('Creating upload directory:', {
-        baseDir,
-        uploadDir,
-        absoluteUploadDir,
-        exists: fs.existsSync(absoluteUploadDir)
-      });
 
       try {
         ensureDirSync(absoluteUploadDir);
-        
-        console.log('Directory created/verified:', {
-          path: absoluteUploadDir,
-          exists: fs.existsSync(absoluteUploadDir),
-          isDirectory: fs.statSync(absoluteUploadDir).isDirectory(),
-          permissions: fs.statSync(absoluteUploadDir).mode.toString(8)
-        });
-        
         cb(null, uploadDir);
       } catch (error) {
-        console.error('Error creating directory:', {
-          error,
-          message: error.message,
-          stack: error.stack
-        });
-        cb(error);
+        console.error('Directory creation failed:', error);
+        cb(new Error('Failed to create upload directory'));
       }
     },
 
     filename: (req, file, cb) => {
-      const fileNameCheck = file.originalname.replace(
-        /[-&\/\\#.,+()$~%'":*?<>{} ]/g,
-        '',
-      );
-      // Add UUID for better uniqueness
-      const uuid = require('uuid').v4().split('-')[0];
-      const finalName = `${fileNameCheck}-${Date.now()}-${uuid}${path.extname(file.originalname)}`;
+      const ext = path.extname(file.originalname);
+      const baseName = path.basename(file.originalname, ext)
+        .replace(/[^a-zA-Z0-9-_]/g, '')
+        .substring(0, 100);
       
-      console.log('Generated filename:', {
-        original: file.originalname,
-        sanitized: fileNameCheck,
-        final: finalName
-      });
+      const uuid = require('uuid').v4().split('-')[0];
+      const finalName = `${baseName}-${uuid}${ext}`;
       
       cb(null, finalName);
     },
@@ -167,27 +120,31 @@ function uploadAiContext(fieldName) {
   const upload = multer({
     storage: aiContextStorage,
     limits: {
-      fileSize: 400 * 1024 * 1024, // 400MB limit
+      fileSize: 50 * 1024 * 1024, // 50MB per file
+      files: 10 // Max 10 files
     },
     fileFilter: (req, file, cb) => {
-      const allowedTypes = ['.txt', '.md', '.tex'];
+      const allowedTypes = {
+        'text/plain': ['.txt'],
+        'text/markdown': ['.md'],
+        'text/x-tex': ['.tex']
+      };
+
       const ext = path.extname(file.originalname).toLowerCase();
-      
-      console.log('File filter check:', {
-        filename: file.originalname,
-        extension: ext,
-        allowed: allowedTypes.includes(ext)
-      });
-      
-      if (allowedTypes.includes(ext)) {
-        cb(null, true);
-      } else {
-        cb(new Error('Only .txt, .md, and .tex files are allowed.'));
+      const mimeType = file.mimetype;
+
+      // Validate extension and MIME type match
+      if (!Object.values(allowedTypes).flat().includes(ext) ||
+          !allowedTypes[mimeType]?.includes(ext)) {
+        return cb(new Error(
+          `Invalid file type. Allowed types: ${Object.values(allowedTypes).flat().join(', ')}`
+        ));
       }
+
+      cb(null, true);
     }
   });
 
-  console.log('Created multer upload middleware');
   return upload.array(fieldName, 10);
 }
 

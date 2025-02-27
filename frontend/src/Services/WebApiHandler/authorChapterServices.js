@@ -18,7 +18,6 @@ const authorChapterServices = {
   },
 
   // api for breadcrumb 
-
   getChapterSlug: (id) => {
     return DataService.get(`static/slug/chapters/${id}`);
   },
@@ -32,13 +31,12 @@ const authorChapterServices = {
     return DataService.get(`static/slug/header-3/${id}`);
   },
 
-  uploadAiContextFile: async ({ bookSlug, chapterSlug, header1Slug, header2Slug, header3Slug, data }) => {
+  // AI context file operations
+  uploadAiContextFile: async ({ bookSlug, chapterSlug, data }) => {
     try {
-      // URL should match the storage path structure
-      const url = `/api/ai-context/${bookSlug}/${chapterSlug}`;
-
+      const url = `/ai/ai-context/${bookSlug}/${chapterSlug}`;
+      
       console.log('Making file upload request to:', url);
-      console.log('Expected storage path:', `uploads/ai-context/${bookSlug}/${chapterSlug}/{filename}`);
       
       // Log the FormData contents
       if (data instanceof FormData) {
@@ -53,34 +51,31 @@ const authorChapterServices = {
           'Content-Type': 'multipart/form-data'
         }
       });
-
-      console.log('Raw upload response:', response);
       
-      // Check if the response indicates where the file was saved
-      if (response.data?.path) {
-        console.log('File saved to:', response.data.path);
+      console.log('File upload response:', response);
+      
+      // Check if we have a valid response
+      if (!response || response.code !== 200 || !response.data) {
+        throw new Error('File upload failed: Server did not return file paths');
       }
       
       return response;
     } catch (error) {
       console.error('Upload service error:', {
-        error: error,
         message: error.message,
         response: error.response?.data,
-        status: error.response?.status,
-        config: error.config
+        status: error.response?.status
       });
       throw error;
     }
   },
 
-  deleteAiContextFile: async ({ bookSlug, chapterSlug, header1Slug, header2Slug, header3Slug, filePath }) => {
+  deleteAiContextFile: async ({ bookSlug, chapterSlug, fileId }) => {
     try {
-      const url = `/api/ai-context/${bookSlug}/${chapterSlug}/${filePath}`;
+      const url = `/ai/ai-context/${bookSlug}/${chapterSlug}/${fileId}`;
       return await DataService.delete(url);
     } catch (error) {
       console.error('Delete file error:', {
-        error: error,
         message: error.message,
         response: error.response?.data,
         status: error.response?.status

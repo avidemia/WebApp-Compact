@@ -11,6 +11,10 @@ import HeaderTwo from '../../schema/Book/Header2.js';
 import ChapterClone from '../../schema/BookClone/ChapterClone.js';
 import HeaderOneClone from '../../schema/BookClone/Header1Clone.js';
 import HeaderTwoClone from '../../schema/BookClone/Header2Clone.js';
+import AiContextFile from '../../schema/Ai/AiContextFile.js';
+import fs from 'fs';
+import path from 'path';
+import { findAndDelete } from '../../helpers/core/file-system.js';
 
 class AiModel {
   static async question(reqData) {
@@ -98,6 +102,31 @@ class AiModel {
         } else {
           chapterContent = chapter.chapter_content;
         }
+      }
+
+      // Get context files
+      const contextFiles = await AiContextFile.find({
+        book_slug: book_slug,
+        chapter_slug: chapter_slug
+      });
+
+      // Add context from files if any exist
+      let contextContent = "";
+      for (const file of contextFiles) {
+        try {
+          const filePath = path.join(process.cwd(), 'uploads', file.path);
+          if (fs.existsSync(filePath)) {
+            const fileContent = fs.readFileSync(filePath, 'utf8');
+            contextContent += `\n\nContext from file ${file.name}:\n${fileContent}`;
+          }
+        } catch (err) {
+          console.error(`Error reading context file ${file.path}:`, err);
+        }
+      }
+
+      // Append context content to chapter content if it exists
+      if (contextContent) {
+        chapterContent += contextContent;
       }
 
       const imgSources = await extractImagesFromHtml(chapterContent);
@@ -259,6 +288,54 @@ class AiModel {
       response = new Response(500, 'F').custom(error.message);
     }
     return response;
+  }
+
+  // New methods for handling AI context files
+  static async saveContextFiles(files) {
+  try {
+    console.log('Saving context files to database:', files.length);
+    const savedFiles = await AiContextFile.insertMany(files);
+    console.log('Files saved successfully:', savedFiles.length);
+    return savedFiles;
+  } catch (error) {
+    console.error('Error saving context files to database:', {
+      message: error.message,
+      stack: error.stack
+    });
+    throw error;
+  }
+}
+
+  static async getContextFiles(bookSlug, chapterSlug) {
+    try {
+      return await AiContextFile.find({ book_slug: bookSlug, chapter_slug: chapterSlug })
+        .sort({ created_at: -1 });
+    } catch (error) {
+      console.error('Error retrieving context files:', error);
+      throw error;
+    }
+  }
+
+  static async deleteContextFile(fileId) {
+    try {
+      const file = await AiContextFile.findById(fileId);
+      
+      if (!file) {
+        return null;
+      }
+      
+      // Delete the file from the filesystem
+      const filePath = path.join(process.cwd(), 'uploads', file.path);
+      findAndDelete(filePath);
+      
+      // Delete the record from the database
+      await AiContextFile.findByIdAndDelete(fileId);
+      
+      return true;
+    } catch (error) {
+      console.error('Error deleting context file:', error);
+      throw error;
+    }
   }
 }
 

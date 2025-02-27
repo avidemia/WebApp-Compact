@@ -21,9 +21,14 @@ export const aiService = {
 
   getContextFiles: async ({ bookSlug, chapterSlug }) => {
     try {
-      const response = await DataService.get(`/api/ai-context/${bookSlug}/${chapterSlug}`);
+      if (!bookSlug || !chapterSlug) {
+        throw new Error('bookSlug and chapterSlug are required');
+      }
+      
+      const response = await DataService.get(`/ai/ai-context/${bookSlug}/${chapterSlug}`);
       return response;
     } catch (error) {
+      console.error('Error getting context files:', error);
       throw error;
     }
   },
