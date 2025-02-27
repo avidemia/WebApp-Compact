@@ -1,5 +1,8 @@
 /* eslint-disable no-lonely-if */
 /* eslint-disable camelcase */
+import fs from 'fs';
+import path from 'path';
+import { resolve } from 'path';
 import OpenAI from 'openai';
 import { stripHtml } from 'string-strip-html';
 import Response from '../../helpers/Response.js';
@@ -11,10 +14,16 @@ import HeaderTwo from '../../schema/Book/Header2.js';
 import ChapterClone from '../../schema/BookClone/ChapterClone.js';
 import HeaderOneClone from '../../schema/BookClone/Header1Clone.js';
 import HeaderTwoClone from '../../schema/BookClone/Header2Clone.js';
-import AiContextFile from '../../schema/Ai/AiContextFile.js';
-import fs from 'fs';
-import path from 'path';
-import { findAndDelete } from '../../helpers/core/file-system.js';
+import mongoose from 'mongoose';
+
+// Get or define the ChapterContextFile model
+let ChapterContextFile;
+try {
+  ChapterContextFile = mongoose.model('chapter_context_file');
+} catch (err) {
+  // If the model doesn't exist, don't worry about it
+  console.log('ChapterContextFile model not found, AI will function without context files');
+}
 
 class AiModel {
   static async question(reqData) {
@@ -104,34 +113,57 @@ class AiModel {
         }
       }
 
-      // Get context files
-      const contextFiles = await AiContextFile.find({
-        book_slug: book_slug,
-        chapter_slug: chapter_slug
-      });
-
-      // Add context from files if any exist
-      let contextContent = "";
-      for (const file of contextFiles) {
-        try {
-          const filePath = path.join(process.cwd(), 'uploads', file.path);
-          if (fs.existsSync(filePath)) {
-            const fileContent = fs.readFileSync(filePath, 'utf8');
-            contextContent += `\n\nContext from file ${file.name}:\n${fileContent}`;
-          }
-        } catch (err) {
-          console.error(`Error reading context file ${file.path}:`, err);
-        }
-      }
-
-      // Append context content to chapter content if it exists
-      if (contextContent) {
-        chapterContent += contextContent;
-      }
-
       const imgSources = await extractImagesFromHtml(chapterContent);
-
       chapterContent = stripHtml(chapterContent).result;
+
+      // Get context files for this chapter if the model exists
+      let contextFilesContent = '';
+      try {
+        if (ChapterContextFile) {
+          // Try to retrieve context files from the database
+          const contextFiles = await ChapterContextFile.find({
+            book_slug: reqData.book_slug,
+            chapter_slug: reqData.chapter_slug
+          });
+
+          // Read the content of each context file
+          for (const file of contextFiles) {
+            try {
+              if (file.path) {
+                const filePath = path.join(resolve(), 'uploads', file.path);
+                if (fs.existsSync(filePath)) {
+                  const fileContent = fs.readFileSync(filePath, 'utf8');
+                  contextFilesContent += `\n\n--- Context from ${file.name} ---\n${fileContent}\n`;
+                }
+              }
+            } catch (fileErr) {
+              console.error(`Error reading context file: ${fileErr.message}`);
+            }
+          }
+        } else {
+          // If model doesn't exist, try to scan directory for files
+          const dirPath = path.join(resolve(), 'uploads/ai-context', reqData.book_slug, reqData.chapter_slug);
+          if (fs.existsSync(dirPath)) {
+            const files = fs.readdirSync(dirPath);
+            for (const file of files) {
+              try {
+                const filePath = path.join(dirPath, file);
+                const fileContent = fs.readFileSync(filePath, 'utf8');
+                contextFilesContent += `\n\n--- Context from ${file} ---\n${fileContent}\n`;
+              } catch (fileErr) {
+                console.error(`Error reading context file: ${fileErr.message}`);
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error(`Error retrieving context files: ${err.message}`);
+      }
+
+      // Add context files to chapter content if any exist
+      if (contextFilesContent) {
+        chapterContent += "\n\n--- ADDITIONAL CONTEXT (NOT VISIBLE TO USERS) ---" + contextFilesContent;
+      }
 
       const openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY,
@@ -288,54 +320,6 @@ class AiModel {
       response = new Response(500, 'F').custom(error.message);
     }
     return response;
-  }
-
-  // New methods for handling AI context files
-  static async saveContextFiles(files) {
-  try {
-    console.log('Saving context files to database:', files.length);
-    const savedFiles = await AiContextFile.insertMany(files);
-    console.log('Files saved successfully:', savedFiles.length);
-    return savedFiles;
-  } catch (error) {
-    console.error('Error saving context files to database:', {
-      message: error.message,
-      stack: error.stack
-    });
-    throw error;
-  }
-}
-
-  static async getContextFiles(bookSlug, chapterSlug) {
-    try {
-      return await AiContextFile.find({ book_slug: bookSlug, chapter_slug: chapterSlug })
-        .sort({ created_at: -1 });
-    } catch (error) {
-      console.error('Error retrieving context files:', error);
-      throw error;
-    }
-  }
-
-  static async deleteContextFile(fileId) {
-    try {
-      const file = await AiContextFile.findById(fileId);
-      
-      if (!file) {
-        return null;
-      }
-      
-      // Delete the file from the filesystem
-      const filePath = path.join(process.cwd(), 'uploads', file.path);
-      findAndDelete(filePath);
-      
-      // Delete the record from the database
-      await AiContextFile.findByIdAndDelete(fileId);
-      
-      return true;
-    } catch (error) {
-      console.error('Error deleting context file:', error);
-      throw error;
-    }
   }
 }
 
